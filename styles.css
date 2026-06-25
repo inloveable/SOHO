@@ -139,7 +139,9 @@ button { font-family: inherit; }
 .panel {
   position: absolute; inset: 0;
   padding-top: var(--nav-h);
-  display: flex; flex-direction: column; justify-content: center;
+  display: flex; flex-direction: column;
+  align-items: center;        /* 水平居中：hero block 在屏幕中央 */
+  justify-content: center;
   padding-inline: var(--px);
   padding-bottom: var(--py);
   opacity: 0; visibility: hidden;
@@ -151,8 +153,11 @@ button { font-family: inherit; }
   opacity: 1; visibility: visible; transform: none; pointer-events: auto;
 }
 
-/* ── Panel 0: Hero ──────────────────────────────────────── */
-.hero { max-width: 640px; }
+/* ── Panel 0: Hero (Steelcase: centered, like "Smarter Systems…") ── */
+.hero {
+  max-width: 640px;
+  text-align: center;   /* Steelcase centers hero text */
+}
 
 .eyebrow {
   font-size: 0.68rem; font-weight: 400;
@@ -170,26 +175,28 @@ button { font-family: inherit; }
   color: var(--ink-dim); max-width: 40ch; margin-bottom: 2rem;
 }
 
-/* CTA buttons */
-.btn-group { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+/* CTA buttons — Steelcase uses pill-shaped dark button */
+.btn-group { display: flex; gap: 0.6rem; flex-wrap: wrap; justify-content: center; }
 .btn {
   display: inline-flex; align-items: center;
   background: var(--accent); color: #120028;
   border: 1px solid transparent;
-  font-size: 0.74rem; font-weight: 500; letter-spacing: 0.14em; text-transform: uppercase;
-  padding: 0.72rem 1.5rem; border-radius: 1px; cursor: pointer;
-  transition: all 0.3s var(--ease);
+  font-size: 0.80rem; font-weight: 500; letter-spacing: 0.06em;
+  padding: 0.78rem 1.8rem;
+  border-radius: 999px;   /* Steelcase pill */
+  cursor: pointer; transition: all 0.3s var(--ease);
 }
 .btn:hover { background: var(--accent-soft); }
 .btn--outline {
   background: transparent; color: var(--ink);
-  border-color: rgba(255,255,255,0.28);
+  border-color: rgba(255,255,255,0.35);
 }
 .btn--outline:hover { border-color: var(--accent-soft); color: var(--accent-soft); background: transparent; }
 
 /* Scroll cue */
 .scroll-cue {
   position: absolute; right: var(--px); bottom: var(--py);
+  /* 绝对定位，不参与 flexbox 居中流 */
   display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
   font-size: 0.58rem; letter-spacing: 0.22em; color: var(--ink-faint);
 }
@@ -205,6 +212,8 @@ button { font-family: inherit; }
 .section-wrap {
   width: 100%;
   max-width: min(1160px, 100%);
+  /* align-items:center on .panel would shrink this; override */
+  align-self: stretch;
 }
 
 /* Section header (Steelcase: thin divider line) */
