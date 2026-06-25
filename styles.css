@@ -138,8 +138,8 @@ button { font-family: inherit; }
 
 .panel {
   position: absolute; inset: 0;
-  padding-top: calc(var(--nav-h) + 1rem);
-  display: flex; flex-direction: column; justify-content: flex-end;
+  padding-top: var(--nav-h);
+  display: flex; flex-direction: column; justify-content: center;
   padding-inline: var(--px);
   padding-bottom: var(--py);
   opacity: 0; visibility: hidden;
@@ -201,7 +201,6 @@ button { font-family: inherit; }
 @keyframes scueLine { 0%,100%{opacity:0.35} 50%{opacity:1} }
 
 /* ── Panels 1-3: section content ────────────────────────── */
-#p1, #p2, #p3 { justify-content: center; }
 
 .section-wrap {
   width: 100%;
