@@ -1,0 +1,14 @@
+{
+  "name": "daiyun-silk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "黛云丝绸 · DAIYUN SILK — three.js 丝绸波浪 3D 背景着陆页",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

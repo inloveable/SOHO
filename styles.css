@@ -1,0 +1,351 @@
+/* ============================================================
+   黛云丝绸 · DAIYUN SILK
+   主题色通过 CSS 变量驱动，由 main.js 在切换分区时平滑过渡
+   ============================================================ */
+
+:root {
+  --accent: #b06bff;
+  --accent-soft: #d9b8ff;
+  --deep: #1a0930;
+  --deep-2: #0a0414;
+  --ink: #f3ecff;
+  --ink-dim: rgba(243, 236, 255, 0.62);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --pad: clamp(1.4rem, 5vw, 5rem);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  font-family: "Noto Serif SC", "Songti SC", serif;
+  color: var(--ink);
+  background: var(--deep-2);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- 背景层 ---------- */
+#silk-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+}
+
+.bg-vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 18%, transparent 30%, rgba(4, 2, 10, 0.45) 100%),
+    linear-gradient(180deg, rgba(6, 3, 16, 0.35) 0%, transparent 28%, transparent 62%, rgba(4, 2, 10, 0.78) 100%);
+  transition: background 1.2s var(--ease);
+}
+
+/* 颗粒质感，增加高级胶片感 */
+.grain {
+  position: fixed;
+  inset: -50%;
+  z-index: 2;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation: grain 6s steps(6) infinite;
+}
+@keyframes grain {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-4%, 3%); }
+  40% { transform: translate(3%, -2%); }
+  60% { transform: translate(-2%, 4%); }
+  80% { transform: translate(4%, -3%); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ---------- 加载层 ---------- */
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  gap: 1.6rem;
+  background: var(--deep-2);
+  transition: opacity 1s var(--ease), visibility 1s var(--ease);
+}
+.loader.is-done { opacity: 0; visibility: hidden; }
+.loader__mark {
+  font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+  font-size: clamp(2.4rem, 9vw, 5rem);
+  letter-spacing: 0.4em;
+  text-indent: 0.4em;
+  color: var(--accent-soft);
+  text-align: center;
+  animation: pulse 2.4s var(--ease) infinite;
+}
+.loader__bar {
+  width: min(46vw, 240px);
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.loader__bar span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  animation: load 1.4s var(--ease) infinite;
+}
+@keyframes load { 0% { transform: translateX(-120%); } 100% { transform: translateX(320%); } }
+@keyframes pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+
+/* ---------- 顶部导航 ---------- */
+.topbar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(1rem, 2.4vw, 1.8rem) var(--pad);
+  mix-blend-mode: screen;
+}
+.brand { text-decoration: none; color: var(--ink); display: flex; align-items: baseline; gap: 0.6rem; }
+.brand__cn { font-size: 1.25rem; letter-spacing: 0.3em; text-indent: 0.3em; }
+.brand__en {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 0.72rem; letter-spacing: 0.32em;
+  color: var(--ink-dim);
+}
+.topnav { display: flex; gap: clamp(0.6rem, 2vw, 1.6rem); }
+.topnav button, .brand {
+  background: none; border: none; cursor: pointer;
+  font-family: inherit;
+}
+.topnav button {
+  color: var(--ink-dim);
+  font-size: 0.92rem;
+  letter-spacing: 0.18em;
+  padding: 0.3rem 0.1rem;
+  position: relative;
+  transition: color 0.5s var(--ease);
+}
+.topnav button::after {
+  content: "";
+  position: absolute; left: 0; bottom: -2px;
+  width: 100%; height: 1px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s var(--ease);
+}
+.topnav button:hover { color: var(--ink); }
+.topnav button.is-active { color: var(--ink); }
+.topnav button.is-active::after { transform: scaleX(1); }
+
+/* ---------- 右侧指示点 ---------- */
+.dots {
+  position: fixed;
+  right: clamp(1rem, 2.4vw, 2rem);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.dots button {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.5s var(--ease);
+}
+.dots button:hover { border-color: var(--accent-soft); }
+.dots button.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px var(--accent);
+  transform: scale(1.25);
+}
+
+/* ---------- 内容舞台 ---------- */
+.stage {
+  position: relative;
+  z-index: 10;
+  height: 100dvh;
+  width: 100%;
+}
+.panel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1.4rem;
+  max-width: min(760px, 86vw);
+  padding-inline: var(--pad);
+  padding-block: 18vh 16vh;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(40px);
+  transition: opacity 0.9s var(--ease), transform 1s var(--ease), visibility 0.9s var(--ease);
+  pointer-events: none;
+}
+.panel.is-active {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+}
+.panel.is-active > * { animation: rise 0.9s var(--ease) backwards; }
+.panel.is-active > *:nth-child(2) { animation-delay: 0.08s; }
+.panel.is-active > *:nth-child(3) { animation-delay: 0.16s; }
+.panel.is-active > *:nth-child(4) { animation-delay: 0.24s; }
+@keyframes rise { from { opacity: 0; transform: translateY(26px); } to { opacity: 1; transform: none; } }
+
+.eyebrow {
+  font-family: "Cormorant Garamond", serif;
+  font-size: 0.86rem;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--accent-soft);
+}
+.display {
+  font-family: "Cormorant Garamond", "Noto Serif SC", serif;
+  font-weight: 500;
+  font-size: clamp(2.8rem, 9vw, 6.2rem);
+  line-height: 1.02;
+  letter-spacing: 0.01em;
+}
+.display--sm { font-size: clamp(2.2rem, 6vw, 4rem); }
+.display em {
+  font-style: italic;
+  color: var(--accent-soft);
+  text-shadow: 0 0 40px var(--accent);
+}
+.lead {
+  font-weight: 300;
+  font-size: clamp(1rem, 1.5vw, 1.18rem);
+  line-height: 1.9;
+  color: var(--ink-dim);
+  max-width: 46ch;
+}
+
+/* ---------- 按钮 ---------- */
+.actions { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.btn {
+  font-family: inherit;
+  font-size: 0.92rem;
+  letter-spacing: 0.16em;
+  padding: 0.85rem 1.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all 0.5s var(--ease);
+  border: 1px solid transparent;
+}
+.btn--solid {
+  background: var(--accent);
+  color: #150627;
+  box-shadow: 0 10px 40px -12px var(--accent);
+}
+.btn--solid:hover { transform: translateY(-2px); box-shadow: 0 16px 50px -12px var(--accent); }
+.btn--ghost {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--ink);
+  backdrop-filter: blur(6px);
+}
+.btn--ghost:hover { border-color: var(--accent-soft); color: var(--accent-soft); }
+
+/* ---------- 卡片（织品） ---------- */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1rem; margin-top: 0.6rem; }
+.card {
+  padding: 1.6rem 1.4rem;
+  border-radius: 16px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.015));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  transition: transform 0.5s var(--ease), border-color 0.5s var(--ease);
+}
+.card:hover { transform: translateY(-6px); border-color: var(--accent); }
+.card__no { font-family: "Cormorant Garamond", serif; font-size: 0.8rem; color: var(--accent-soft); letter-spacing: 0.2em; }
+.card h3 { font-weight: 600; font-size: 1.3rem; margin: 0.5rem 0 0.6rem; }
+.card p { font-weight: 300; font-size: 0.95rem; line-height: 1.7; color: var(--ink-dim); }
+
+/* ---------- 步骤（匠艺） ---------- */
+.steps { list-style: none; display: grid; gap: 0.4rem; margin-top: 0.6rem; counter-reset: s; }
+.steps li {
+  display: flex; align-items: baseline; gap: 1.2rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  counter-increment: s;
+}
+.steps li::before {
+  content: "0" counter(s);
+  font-family: "Cormorant Garamond", serif;
+  color: var(--accent-soft);
+  font-size: 0.9rem;
+  min-width: 2ch;
+}
+.steps span { font-size: 1.4rem; min-width: 4em; }
+.steps i { font-style: normal; font-weight: 300; color: var(--ink-dim); }
+
+/* ---------- 联系 ---------- */
+.contact { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.4rem; }
+.contact__line {
+  font-family: "Cormorant Garamond", serif;
+  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  text-decoration: none;
+  width: fit-content;
+  transition: color 0.4s var(--ease);
+}
+a.contact__line:hover { color: var(--accent-soft); }
+
+/* ---------- 底部提示 ---------- */
+.hint {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(1rem, 2vw, 1.6rem) var(--pad);
+  font-size: 0.74rem;
+  letter-spacing: 0.22em;
+  color: var(--ink-dim);
+  text-transform: uppercase;
+  font-family: "Cormorant Garamond", serif;
+  mix-blend-mode: screen;
+}
+.hint__scroll { position: relative; padding-left: 1.6rem; }
+.hint__scroll::before {
+  content: "";
+  position: absolute; left: 0; top: 50%;
+  width: 1rem; height: 1px;
+  background: var(--accent);
+  transform-origin: left;
+  animation: slide 2.4s var(--ease) infinite;
+}
+@keyframes slide { 0%, 100% { transform: scaleX(0.4); opacity: 0.4; } 50% { transform: scaleX(1); opacity: 1; } }
+.hint__count b { color: var(--ink); font-weight: 600; }
+
+@media (max-width: 720px) {
+  .brand__en { display: none; }
+  .hint__scroll { display: none; }
+  .dots { right: 0.8rem; }
+  .panel { padding-block: 20vh 18vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grain, .hint__scroll::before, .loader__mark, .loader__bar span { animation: none; }
+}
