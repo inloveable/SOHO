@@ -37,13 +37,32 @@ const THEMES = [
 const BG = new THREE.Color("#020107"); // 太空深黑，固定不变
 
 /* ══════════════════════════════════════════════════════════
+   SILK 配置对象
+   ──────────────────────────────────────────────────────────
+   所有视觉参数集中在这里，浏览器控制台可实时调整：
+     window.SILK.flowSpeed = 1.5   // 流快一倍
+     window.SILK.amplitude = 1.4   // 褶皱更深
+   ══════════════════════════════════════════════════════════ */
+const SILK = {
+  flowSpeed:   1.0,   // 流速倍率  （0.3=极慢飘动 / 1.0=标准 / 2.0=快速涌动）
+  amplitude:   1.0,   // 褶皱幅度  （0.5=平缓 / 1.0=标准 / 1.8=剧烈）
+  shimmer:     2.6,   // 高光强度  （1.0=柔和 / 2.6=标准缎面 / 4.0=强反光）
+  visibleFrac: 0.72,  // 主体基础不透明度（0~1，越大越实）
+  edgeFade:    0.22,  // 上下边缘渐隐宽度（UV 比例，越大渐隐越宽）
+  drift:       0.28,  // 漂浮幅度  （世界单位，0=静止 / 0.5=明显漂动）
+  driftSpeed:  1.0,   // 漂浮速度倍率
+};
+
+/* ══════════════════════════════════════════════════════════
    GLSL：顶点着色器（丝带 + 丝光层共用）
    纯正弦波褶皱，解析偏导求精确法线
    ══════════════════════════════════════════════════════════ */
 const vertexShader = /* glsl */`
   uniform float uTime;
+  uniform float uFlowSpeed;
+  uniform float uAmplitude;
   varying vec2  vUv;
-  varying vec3  vTangentW;  // 经纱方向（x 轴，Kajiya-Kay 用）
+  varying vec3  vTangentW;
   varying vec3  vNormalW;
   varying vec3  vViewDir;
   varying float vElevation;
@@ -53,24 +72,41 @@ const vertexShader = /* glsl */`
     float x = position.x;
     float y = position.y;
     float t = uTime;
+    float s = uFlowSpeed;
 
-    /* —— 丝绸褶皱：纯正弦叠加，慢 —— */
-    // 主长波（约 20 秒一周期）
-    float z  = sin(x * 0.24 + t * 0.32) * 0.82;
-    // 次级波
-    z       += sin(x * 0.60 - t * 0.19) * 0.28;
-    // 细节波（极轻微，模拟织物微细结构）
-    z       += sin(x * 1.08 + t * 0.11) * 0.10;
-    // 竖向曲率（丝带截面轻微弓起，更立体）
-    z       += sin(y * 2.50 + t * 0.20) * 0.13;
+    /* ── 对角流向量 ─────────────────────────────────────────
+       局部坐标中，(x-,y+) = 丝带左上端 → 屏幕左上
+                  (x+,y-) = 丝带右下端 → 屏幕右下
+       d1 沿此对角方向，波相减去时间 → 波峰从左上往右下传播
+       d2 略微不同角度，叠加有机感
+       d3 轻微逆向，防止运动过于"机械"                       */
+    float d1 = x * 0.72 - y * 0.52;   // 主对角（35°）
+    float d2 = x * 0.55 - y * 0.84;   // 副对角（56°）
+    float d3 = x * 0.90 + y * 0.44;   // 轻微逆向扰动
 
+    /* ── 相位（负号 = 向右下传播） ─────────────────────── */
+    float ph1 = d1 * 0.28 - t * 0.52 * s;  // 主波（宽、慢）
+    float ph2 = d2 * 0.66 - t * 0.28 * s;  // 次波（中速）
+    float ph3 = d3 * 0.44 + t * 0.18 * s;  // 逆向扰动
+    float ph4 = d1 * 1.30 - t * 0.90 * s;  // 高频细节
+
+    float z  = sin(ph1) * 0.92
+             + sin(ph2) * 0.30
+             + sin(ph3) * 0.15
+             + sin(ph4) * 0.08;
+    z *= uAmplitude;
     vElevation = z;
 
-    /* —— 解析偏导 → 精确法线，无限差分伪影 —— */
-    float dz_dx = cos(x * 0.24 + t * 0.32) * (0.24 * 0.82)
-                + cos(x * 0.60 - t * 0.19) * (0.60 * 0.28)
-                + cos(x * 1.08 + t * 0.11) * (1.08 * 0.10);
-    float dz_dy = cos(y * 2.50 + t * 0.20) * (2.50 * 0.13);
+    /* ── 解析偏导（精确法线）────────────────────────────── */
+    float dz_dx = (cos(ph1) * ( 0.72 * 0.28 * 0.92)
+                 + cos(ph2) * ( 0.55 * 0.66 * 0.30)
+                 + cos(ph3) * ( 0.90 * 0.44 * 0.15)
+                 + cos(ph4) * ( 0.72 * 1.30 * 0.08)) * uAmplitude;
+
+    float dz_dy = (cos(ph1) * (-0.52 * 0.28 * 0.92)
+                 + cos(ph2) * (-0.84 * 0.66 * 0.30)
+                 + cos(ph3) * ( 0.44 * 0.44 * 0.15)
+                 + cos(ph4) * (-0.52 * 1.30 * 0.08)) * uAmplitude;
 
     vec3 lT = normalize(vec3(1.0, 0.0, dz_dx)); // 经纱切线
     vec3 lB = normalize(vec3(0.0, 1.0, dz_dy)); // 纬纱切线
@@ -96,6 +132,9 @@ const silkFragment = /* glsl */`
   uniform vec3  uBright;
   uniform float uTime;
   uniform float uOpacity;
+  uniform float uVisibleFrac;  // 主体基础不透明度
+  uniform float uShimmer;      // 高光强度
+  uniform float uEdgeFade;     // 边缘渐隐宽度
   varying vec2  vUv;
   varying vec3  vTangentW;
   varying vec3  vNormalW;
@@ -118,26 +157,23 @@ const silkFragment = /* glsl */`
     /* Blinn-Phong 高光（高指数=细亮点，随折叠脊背移动）*/
     vec3  H    = normalize(L + V);
     float NdH  = max(dot(N, H), 0.0);
-    float spec = pow(NdH, 88.0);   // 88 → 缎面细亮斑
+    float spec = pow(NdH, 88.0);
 
-    /* 菲涅尔（掠射角轻微反光，模拟纱线散射） */
     float NdV  = max(dot(N, V), 0.0);
     float fres = pow(1.0 - NdV, 2.8);
 
-    /* 颜色：阴影极深 → 照明面深紫 → 高光银白
-       高对比度是缎面丝绸的视觉特征              */
+    /* 颜色：阴影极深 → 照明面深紫 → 高光银白 */
     float ridge = smoothstep(-1.4, 1.4, vElevation);
-    vec3 col    = uDeep * (0.05 + diff * 0.65 * ridge);  // 暗部趋近黑色
-    col        += uBright * spec  * 2.8;   // 高光（主亮点，细而亮）
-    col        += uBright * fres  * 0.12;  // 边缘薄光
-    col        += uDeep   * diff  * 0.30;  // 补一点固有色到受光面
+    vec3 col    = uDeep * (0.05 + diff * 0.65 * ridge);
+    col        += uBright * spec  * uShimmer;  // 高光（由 SILK.shimmer 控制）
+    col        += uBright * fres  * 0.12;
+    col        += uDeep   * diff  * 0.30;
 
-    /* 透明度：布料清晰可见（0.75 基础），高光处更实
-       仅上下边缘羽化，不做左右羽化              */
-    float eY = smoothstep(0.0, 0.22, vUv.y) * smoothstep(1.0, 0.78, vUv.y);
+    /* 透明度：上下边缘渐隐宽度由 uEdgeFade 控制 */
+    float eY = smoothstep(0.0, uEdgeFade, vUv.y) * smoothstep(1.0, 1.0 - uEdgeFade, vUv.y);
     float eX = smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
 
-    float a = eY * eX * (0.75 + spec * 0.20 + fres * 0.04);
+    float a = eY * eX * (uVisibleFrac + spec * 0.22 + fres * 0.04);
     a = clamp(a * uOpacity, 0.0, 0.95);
 
     gl_FragColor = vec4(col, a);
@@ -203,10 +239,15 @@ const geo = new THREE.PlaneGeometry(18, 5.0, 200, 44);
 const T0 = THEMES[0];
 
 const silkUniforms = {
-  uTime:   { value: 0 },
-  uOpacity:{ value: 1.0 },
-  uDeep:   { value: T0.deep.clone() },
-  uBright: { value: T0.bright.clone() },
+  uTime:        { value: 0 },
+  uOpacity:     { value: 1.0 },
+  uFlowSpeed:   { value: SILK.flowSpeed },
+  uAmplitude:   { value: SILK.amplitude },
+  uShimmer:     { value: SILK.shimmer },
+  uVisibleFrac: { value: SILK.visibleFrac },
+  uEdgeFade:    { value: SILK.edgeFade },
+  uDeep:        { value: T0.deep.clone() },
+  uBright:      { value: T0.bright.clone() },
 };
 // 主丝带
 const silkMat = new THREE.ShaderMaterial({
@@ -314,11 +355,19 @@ function tick() {
   silkUniforms.uDeep.value.lerp(target.deep,    0.040);
   silkUniforms.uBright.value.lerp(target.bright, 0.040);
 
-  // 极缓慢漂浮（像太空中被微风轻托，不越过中线进入文字区）
-  silkGroup.position.y  = 0.30 + Math.sin(t * 0.14) * 0.28;
-  silkGroup.position.x  = 3.20 + Math.sin(t * 0.09) * 0.16;
-  silkGroup.rotation.z  = -0.12 + Math.sin(t * 0.08) * 0.028;
-  silkGroup.rotation.y  =  0.55 + Math.sin(t * 0.06) * 0.038;
+  // 从 SILK 配置每帧同步 uniform（允许运行时调整）
+  silkUniforms.uFlowSpeed.value   = SILK.flowSpeed;
+  silkUniforms.uAmplitude.value   = SILK.amplitude;
+  silkUniforms.uShimmer.value     = SILK.shimmer;
+  silkUniforms.uVisibleFrac.value = SILK.visibleFrac;
+  silkUniforms.uEdgeFade.value    = SILK.edgeFade;
+
+  // 漂浮（幅度/速度由 SILK 控制，位置锁定在右侧不入文字区）
+  const ds = SILK.driftSpeed;
+  silkGroup.position.y = 0.30 + Math.sin(t * 0.14 * ds) * SILK.drift;
+  silkGroup.position.x = 3.20 + Math.sin(t * 0.09 * ds) * SILK.drift * 0.58;
+  silkGroup.rotation.z = -0.12 + Math.sin(t * 0.08 * ds) * 0.028;
+  silkGroup.rotation.y =  0.55 + Math.sin(t * 0.06 * ds) * 0.038;
 
   // 星空极缓慢自转
   starsFar.rotation.z  += dt * 0.003;
@@ -351,3 +400,12 @@ tick();
 const loader = document.getElementById("loader");
 window.addEventListener("load", () => setTimeout(() => loader?.classList.add("is-done"), 400));
 setTimeout(() => loader?.classList.add("is-done"), 2500);
+
+/* ── 暴露调试接口（浏览器控制台可实时调参）──────────────── */
+window.SILK = SILK;
+// 示例（控制台粘贴运行）：
+//   window.SILK.flowSpeed = 1.8   // 加速流动
+//   window.SILK.amplitude = 1.5   // 加深褶皱
+//   window.SILK.shimmer   = 4.0   // 强高光
+//   window.SILK.visibleFrac = 0.9 // 更实
+//   window.SILK.drift     = 0.5   // 更大漂浮
