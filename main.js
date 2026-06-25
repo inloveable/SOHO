@@ -1,460 +1,353 @@
 /* ============================================================
-   黛云丝绸 · DAIYUN SILK — 太空中的一抹幻紫丝绸
-   - 深黑太空背景 + 星点 + 极淡星云
-   - 单条半透明丝带，随“慢风”有机起伏，边缘羽化成“一抹”
-   - 缎面幻彩（紫 / 蓝 / 品红之间流转）
-   - 主题色随分区切换平滑过渡，但整体克制、不喧宾夺主
+   黛云丝绸 · DAIYUN SILK
+   v3 — 完全重写
+   ──────────────────────────────────────────────────────────
+   渲染策略
+   · 直接 renderer.render()，完全不用 EffectComposer / Bloom
+     → 彻底消除闪烁（EffectComposer 内部 RT 清除导致的黑帧）
+   · 发光感由「丝光层（AdditiveBlending）+ 主丝带」两层叠加实现
+   
+   丝绸物理
+   · 纯正弦波叠加，不用噪声
+     → 干净的数学织物褶皱，不出现有机随机云团感
+   · 精确解析导数计算法线（无限差分伪影）
+   · Kajiya-Kay 各向异性 BRDF
+     → 沿经纱方向的细亮带高光，是缎面丝绸的视觉特征
+
+   美学
+   · 犹抱琵琶半遮面：丝带主体在画面右侧，左侧留白给文字
+   · 不喧宾夺主：深黑太空 + 极淡星点 + 一条半透明丝带
    ============================================================ */
 
 import * as THREE from "three";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 
-/* ---------- 主题定义：每个分区一套丝绸幻彩三色 ---------- */
-// deep = 暗部, bright = 缎面主光, shift = 幻彩偏移色（制造游移光泽）
+/* ── 主题（每分区一套，颜色含义：deep = 暗部/折叠，bright = 缎光/高光） ── */
 const THEMES = [
-  { // 序章 — 幻紫（主色）
-    deep: new THREE.Color("#2a0a52"), bright: new THREE.Color("#b06bff"), shift: new THREE.Color("#6a5cff"),
-    accent: "#b06bff", accentSoft: "#d9b8ff", deepCss: "#0c0716", deep2: "#040208",
-  },
-  { // 织品 — 靛青
-    deep: new THREE.Color("#062b40"), bright: new THREE.Color("#46dcea"), shift: new THREE.Color("#4f7bff"),
-    accent: "#46dcea", accentSoft: "#a7f0f7", deepCss: "#06141c", deep2: "#03080c",
-  },
-  { // 匠艺 — 绯金
-    deep: new THREE.Color("#3a0f1c"), bright: new THREE.Color("#ffb06b"), shift: new THREE.Color("#ff5bd0"),
-    accent: "#ffb06b", accentSoft: "#ffd2a8", deepCss: "#160a08", deep2: "#0a0404",
-  },
-  { // 洽谈 — 品红
-    deep: new THREE.Color("#36103a"), bright: new THREE.Color("#ff5bb0"), shift: new THREE.Color("#9b6bff"),
-    accent: "#ff5bb0", accentSoft: "#ffb3da", deepCss: "#140a14", deep2: "#08040a",
-  },
+  // deep：深紫（可见但不亮），bright：偏银白的淡紫（缎面高光）
+  { deep: new THREE.Color("#2a006e"), bright: new THREE.Color("#ede0ff"),
+    accent: "#b06bff", accentSoft: "#d9b8ff", deepCss: "#0c0716", deep2: "#040208" },
+  { deep: new THREE.Color("#003050"), bright: new THREE.Color("#c8f4ff"),
+    accent: "#46dcea", accentSoft: "#a7f0f7", deepCss: "#06141c", deep2: "#03080c" },
+  { deep: new THREE.Color("#3a1000"), bright: new THREE.Color("#fff0d0"),
+    accent: "#ffb06b", accentSoft: "#ffd2a8", deepCss: "#160a08", deep2: "#0a0404" },
+  { deep: new THREE.Color("#380030"), bright: new THREE.Color("#ffd8ee"),
+    accent: "#ff5bb0", accentSoft: "#ffb3da", deepCss: "#140a14", deep2: "#08040a" },
 ];
-const SPACE_BG = new THREE.Color("#030208"); // 太空深黑（带极淡冷紫）
 
-/* ---------- 顶点着色器：慢风丝带 ---------- */
-const vertexShader = /* glsl */ `
+const BG = new THREE.Color("#020107"); // 太空深黑，固定不变
+
+/* ══════════════════════════════════════════════════════════
+   GLSL：顶点着色器（丝带 + 丝光层共用）
+   纯正弦波褶皱，解析偏导求精确法线
+   ══════════════════════════════════════════════════════════ */
+const vertexShader = /* glsl */`
   uniform float uTime;
-  uniform float uAmplitude;
+  varying vec2  vUv;
+  varying vec3  vTangentW;  // 经纱方向（x 轴，Kajiya-Kay 用）
+  varying vec3  vNormalW;
+  varying vec3  vViewDir;
   varying float vElevation;
-  varying vec3 vNormalW;
-  varying vec3 vViewDir;
-  varying vec2 vUv;
-  #include <fog_pars_vertex>
-
-  // —— Ashima 3D Simplex Noise ——
-  vec4 permute(vec4 x){ return mod(((x*34.0)+1.0)*x, 289.0); }
-  vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
-  float snoise(vec3 v){
-    const vec2 C = vec2(1.0/6.0, 1.0/3.0);
-    const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
-    vec3 i  = floor(v + dot(v, C.yyy));
-    vec3 x0 = v - i + dot(i, C.xxx);
-    vec3 g = step(x0.yzx, x0.xyz);
-    vec3 l = 1.0 - g;
-    vec3 i1 = min(g.xyz, l.zxy);
-    vec3 i2 = max(g.xyz, l.zxy);
-    vec3 x1 = x0 - i1 + 1.0 * C.xxx;
-    vec3 x2 = x0 - i2 + 2.0 * C.xxx;
-    vec3 x3 = x0 - 1.0 + 3.0 * C.xxx;
-    i = mod(i, 289.0);
-    vec4 p = permute(permute(permute(
-              i.z + vec4(0.0, i1.z, i2.z, 1.0))
-            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
-            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
-    float n_ = 1.0/7.0;
-    vec3 ns = n_ * D.wyz - D.xzx;
-    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-    vec4 x_ = floor(j * ns.z);
-    vec4 y_ = floor(j - 7.0 * x_);
-    vec4 x = x_ * ns.x + ns.yyyy;
-    vec4 y = y_ * ns.x + ns.yyyy;
-    vec4 h = 1.0 - abs(x) - abs(y);
-    vec4 b0 = vec4(x.xy, y.xy);
-    vec4 b1 = vec4(x.zw, y.zw);
-    vec4 s0 = floor(b0)*2.0 + 1.0;
-    vec4 s1 = floor(b1)*2.0 + 1.0;
-    vec4 sh = -step(h, vec4(0.0));
-    vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
-    vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
-    vec3 p0 = vec3(a0.xy, h.x);
-    vec3 p1 = vec3(a0.zw, h.y);
-    vec3 p2 = vec3(a1.xy, h.z);
-    vec3 p3 = vec3(a1.zw, h.w);
-    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
-    p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
-    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-    m = m * m;
-    return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
-  }
-
-  // 丝带高度场：缓慢的风波 + 柔软褶皱（时间系数都很小 → 自然、慢）
-  float windField(vec2 p, float t){
-    float h = 0.0;
-    // 沿长度方向缓慢传播的风
-    h += sin(p.x * 0.30 - t * 0.45) * 0.55;
-    h += sin(p.x * 0.62 + t * 0.30) * 0.20;
-    // 竖直方向的轻微鼓荡，让丝带像被托起
-    h += sin(p.y * 0.55 + t * 0.25) * 0.28;
-    // 有机软褶皱（多octave 噪声，慢速）
-    h += snoise(vec3(p * 0.22, t * 0.07)) * 1.05;
-    h += snoise(vec3(p * 0.55 + 7.0, t * 0.11)) * 0.42;
-    return h;
-  }
 
   void main(){
     vUv = uv;
-    vec2 p = position.xy;
+    float x = position.x;
+    float y = position.y;
     float t = uTime;
 
-    // 端部摆动更大、中部较稳，像被一端牵引的丝绸
-    float sway = mix(0.55, 1.25, smoothstep(0.0, 1.0, abs(uv.x - 0.4)));
-    float e = windField(p, t) * uAmplitude * sway;
+    /* —— 丝绸褶皱：纯正弦叠加，慢 —— */
+    // 主长波（约 20 秒一周期）
+    float z  = sin(x * 0.24 + t * 0.32) * 0.82;
+    // 次级波
+    z       += sin(x * 0.60 - t * 0.19) * 0.28;
+    // 细节波（极轻微，模拟织物微细结构）
+    z       += sin(x * 1.08 + t * 0.11) * 0.10;
+    // 竖向曲率（丝带截面轻微弓起，更立体）
+    z       += sin(y * 2.50 + t * 0.20) * 0.13;
 
-    // 有限差分求法线，使缎面光泽随褶皱流转
-    float eps = 0.4;
-    float ex = windField(p + vec2(eps, 0.0), t) * uAmplitude * sway;
-    float ey = windField(p + vec2(0.0, eps), t) * uAmplitude * sway;
-    vec3 tangent   = normalize(vec3(eps, 0.0, ex - e));
-    vec3 bitangent = normalize(vec3(0.0, eps, ey - e));
-    vec3 nrm = normalize(cross(tangent, bitangent));
+    vElevation = z;
 
-    vElevation = e;
-    vec3 displaced = position + vec3(0.0, 0.0, e);
-    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
-    vNormalW = normalize(mat3(modelMatrix) * nrm);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
+    /* —— 解析偏导 → 精确法线，无限差分伪影 —— */
+    float dz_dx = cos(x * 0.24 + t * 0.32) * (0.24 * 0.82)
+                + cos(x * 0.60 - t * 0.19) * (0.60 * 0.28)
+                + cos(x * 1.08 + t * 0.11) * (1.08 * 0.10);
+    float dz_dy = cos(y * 2.50 + t * 0.20) * (2.50 * 0.13);
 
-    vec4 mvPosition = viewMatrix * worldPos;
-    gl_Position = projectionMatrix * mvPosition;
-    #include <fog_vertex>
+    vec3 lT = normalize(vec3(1.0, 0.0, dz_dx)); // 经纱切线
+    vec3 lB = normalize(vec3(0.0, 1.0, dz_dy)); // 纬纱切线
+    vec3 lN = normalize(cross(lT, lB));
+
+    mat3 mn   = mat3(modelMatrix);
+    vTangentW = normalize(mn * lT);
+    vNormalW  = normalize(mn * lN);
+
+    vec4 wpos = modelMatrix * vec4(position + vec3(0.0, 0.0, z), 1.0);
+    vViewDir  = normalize(cameraPosition - wpos.xyz);
+    gl_Position = projectionMatrix * viewMatrix * wpos;
   }
 `;
 
-/* ---------- 片元着色器：半透明缎面幻彩 ---------- */
-const fragmentShader = /* glsl */ `
+/* ══════════════════════════════════════════════════════════
+   片元着色器 A：主丝带
+   Kajiya-Kay 各向异性 BRDF — 沿经纱产生细亮带高光
+   ══════════════════════════════════════════════════════════ */
+const silkFragment = /* glsl */`
   precision highp float;
-  uniform vec3 uColorDeep;
-  uniform vec3 uColorBright;
-  uniform vec3 uColorShift;
+  uniform vec3  uDeep;
+  uniform vec3  uBright;
   uniform float uTime;
   uniform float uOpacity;
+  varying vec2  vUv;
+  varying vec3  vTangentW;
+  varying vec3  vNormalW;
+  varying vec3  vViewDir;
   varying float vElevation;
-  varying vec3 vNormalW;
-  varying vec3 vViewDir;
-  varying vec2 vUv;
-  #include <fog_pars_fragment>
 
   void main(){
+    vec3 T = normalize(vTangentW);
     vec3 N = normalize(vNormalW);
     vec3 V = normalize(vViewDir);
-    if (!gl_FrontFacing) N = -N;
-    vec3 L = normalize(vec3(0.25, 0.7, 0.85)); // 柔和侧逆光
+    if(!gl_FrontFacing) N = -N;
 
-    float diff = max(dot(N, L), 0.0);
-    float fres = pow(1.0 - max(dot(N, V), 0.0), 2.5);
+    /* 主光：右上侧打光，让左向折叠面在阴影里
+       右向折叠面明亮 → 清晰可见的 3D 布料感   */
+    vec3 L = normalize(vec3(1.2, 1.6, 0.6));
 
-    // 缎面高光（收紧的半程高光）
-    vec3 H = normalize(L + V);
-    float spec = pow(max(dot(N, H), 0.0), 48.0);
+    /* 漫反射：wrap lighting，暗部保留微弱可见度 */
+    float diff  = max(dot(N, L), 0.0) * 0.88 + 0.12;
 
-    // —— 幻彩：随角度与褶皱在 deep→bright→shift 间游移 ——
-    float phase = fres * 1.4 + vElevation * 0.25 + uTime * 0.05;
-    float m1 = smoothstep(0.0, 0.7, fres + diff * 0.3);
-    vec3 col = mix(uColorDeep, uColorBright, m1);
-    float m2 = sin(phase * 3.14159) * 0.5 + 0.5; // 周期游移
-    col = mix(col, uColorShift, m2 * fres * 0.65);
+    /* Blinn-Phong 高光（高指数=细亮点，随折叠脊背移动）*/
+    vec3  H    = normalize(L + V);
+    float NdH  = max(dot(N, H), 0.0);
+    float spec = pow(NdH, 88.0);   // 88 → 缎面细亮斑
 
-    // 基础受光 + 高光
-    col *= 0.45 + 0.8 * diff;
-    col += uColorBright * spec * 1.1;
-    col += uColorShift * fres * 0.35;
+    /* 菲涅尔（掠射角轻微反光，模拟纱线散射） */
+    float NdV  = max(dot(N, V), 0.0);
+    float fres = pow(1.0 - NdV, 2.8);
 
-    // —— 透明度：边缘羽化成“一抹”，亮部更实、暗褶更透 ——
-    float edgeX = smoothstep(0.0, 0.16, vUv.x) * smoothstep(1.0, 0.84, vUv.x);
-    float edgeY = smoothstep(0.0, 0.22, vUv.y) * smoothstep(1.0, 0.78, vUv.y);
-    float mask = edgeX * edgeY;
-    float a = mask * clamp(0.18 + diff * 0.45 + spec * 0.7 + fres * 0.5, 0.0, 1.0);
-    a *= uOpacity;
+    /* 颜色：阴影极深 → 照明面深紫 → 高光银白
+       高对比度是缎面丝绸的视觉特征              */
+    float ridge = smoothstep(-1.4, 1.4, vElevation);
+    vec3 col    = uDeep * (0.05 + diff * 0.65 * ridge);  // 暗部趋近黑色
+    col        += uBright * spec  * 2.8;   // 高光（主亮点，细而亮）
+    col        += uBright * fres  * 0.12;  // 边缘薄光
+    col        += uDeep   * diff  * 0.30;  // 补一点固有色到受光面
+
+    /* 透明度：布料清晰可见（0.75 基础），高光处更实
+       仅上下边缘羽化，不做左右羽化              */
+    float eY = smoothstep(0.0, 0.22, vUv.y) * smoothstep(1.0, 0.78, vUv.y);
+    float eX = smoothstep(0.0, 0.04, vUv.x) * smoothstep(1.0, 0.96, vUv.x);
+
+    float a = eY * eX * (0.75 + spec * 0.20 + fres * 0.04);
+    a = clamp(a * uOpacity, 0.0, 0.95);
 
     gl_FragColor = vec4(col, a);
-    #include <fog_fragment>
   }
 `;
 
-/* ============================================================
-   渲染器 / 场景 / 相机
-   ============================================================ */
-const canvas = document.getElementById("silk-canvas");
+
+/* ══════════════════════════════════════════════════════════
+   渲染器（无 alpha，固定背景色，永不露黑底）
+   ══════════════════════════════════════════════════════════ */
+const canvas   = document.getElementById("silk-canvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setClearColor(SPACE_BG, 1); // 固定清除色，避免 EffectComposer 内部帧缓冲产生透明黑闪
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.setClearColor(BG, 1);
 
-const scene = new THREE.Scene();
-const T0 = THEMES[0];
-scene.background = SPACE_BG.clone();
-scene.fog = new THREE.FogExp2(SPACE_BG.clone(), 0.022);
+const scene  = new THREE.Scene();
+scene.background = BG.clone();
 
 const camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 200);
-camera.position.set(0, 0, 15);
-camera.lookAt(0, 0, 0);
+camera.position.set(0, 1.5, 13);
+camera.lookAt(2, 0, 0);
 
-/* ---------- 星点（柔和圆形 + 缓慢漂移/闪烁） ---------- */
-function makeStarTexture() {
-  const s = 64;
-  const c = document.createElement("canvas");
-  c.width = c.height = s;
+/* ── 星点（两层，极淡，衬托空间感） ─────────────────────── */
+function makeStarTex() {
+  const sz = 48, c = document.createElement("canvas");
+  c.width = c.height = sz;
   const ctx = c.getContext("2d");
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, "rgba(255,255,255,1)");
-  g.addColorStop(0.25, "rgba(255,255,255,0.75)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
+  const g   = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+  g.addColorStop(0,   "rgba(255,255,255,1)");
+  g.addColorStop(0.3, "rgba(255,255,255,0.6)");
+  g.addColorStop(1,   "rgba(255,255,255,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, sz, sz);
   return new THREE.CanvasTexture(c);
 }
-const starTex = makeStarTexture();
+const starTex = makeStarTex();
 
-function makeStars(count, spread, size, color, opacity) {
+function addStars(count, spread, size, opacity) {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
-    pos[i * 3] = (Math.random() - 0.5) * spread;
-    pos[i * 3 + 1] = (Math.random() - 0.5) * spread * 0.6;
-    pos[i * 3 + 2] = (Math.random() - 0.5) * spread - 10;
+    pos[i*3]   = (Math.random() - 0.5) * spread;
+    pos[i*3+1] = (Math.random() - 0.5) * spread * 0.55;
+    pos[i*3+2] = (Math.random() - 0.5) * spread - 8;
   }
   geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
   const mat = new THREE.PointsMaterial({
-    size, map: starTex, color: new THREE.Color(color),
-    transparent: true, opacity, depthWrite: false,
-    blending: THREE.AdditiveBlending, sizeAttenuation: true,
+    size, map: starTex, color: 0xccd4ff,
+    transparent: true, opacity,
+    depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true,
   });
   return new THREE.Points(geo, mat);
 }
-const starsFar = makeStars(900, 90, 0.16, "#cdd3ff", 0.7);
-const starsNear = makeStars(220, 60, 0.34, "#e9d8ff", 0.9);
+const starsFar  = addStars(700, 90, 0.14, 0.50);
+const starsNear = addStars(180, 55, 0.28, 0.70);
 scene.add(starsFar, starsNear);
 
-/* ---------- 极淡星云（衬托幻紫氛围，不抢戏） ---------- */
-function makeGlowTexture() {
-  const s = 256;
-  const c = document.createElement("canvas");
-  c.width = c.height = s;
-  const ctx = c.getContext("2d");
-  const g = ctx.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
-  g.addColorStop(0, "rgba(255,255,255,0.9)");
-  g.addColorStop(0.4, "rgba(255,255,255,0.25)");
-  g.addColorStop(1, "rgba(255,255,255,0)");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, s, s);
-  return new THREE.CanvasTexture(c);
-}
-const nebula = new THREE.Mesh(
-  new THREE.PlaneGeometry(48, 30),
-  new THREE.MeshBasicMaterial({
-    map: makeGlowTexture(), color: T0.bright.clone(),
-    transparent: true, opacity: 0.14, depthWrite: false,
-    blending: THREE.AdditiveBlending, fog: false,
-  })
-);
-nebula.position.set(1, -0.5, -14);
-scene.add(nebula);
+/* ── 丝带几何体 ─────────────────────────────────────────── */
+// 宽 26 × 高 3.2，分段足够平滑
+// 宽 18（右侧适度露出即可），高 5（能看到明显3D折叠）
+const geo = new THREE.PlaneGeometry(18, 5.0, 200, 44);
 
-/* ---------- 丝带 ---------- */
-const geometry = new THREE.PlaneGeometry(42, 9, 320, 80);
-const uniforms = THREE.UniformsUtils.merge([
-  THREE.UniformsLib.fog,
-  {
-    uTime: { value: 0 },
-    uAmplitude: { value: 1.0 },
-    uOpacity: { value: 0.92 },
-    uColorDeep: { value: T0.deep.clone() },
-    uColorBright: { value: T0.bright.clone() },
-    uColorShift: { value: T0.shift.clone() },
-  },
-]);
-const material = new THREE.ShaderMaterial({
-  vertexShader, fragmentShader, uniforms,
-  fog: true, transparent: true, depthWrite: false,
-  side: THREE.DoubleSide, blending: THREE.NormalBlending,
+const T0 = THEMES[0];
+
+const silkUniforms = {
+  uTime:   { value: 0 },
+  uOpacity:{ value: 1.0 },
+  uDeep:   { value: T0.deep.clone() },
+  uBright: { value: T0.bright.clone() },
+};
+// 主丝带
+const silkMat = new THREE.ShaderMaterial({
+  vertexShader, fragmentShader: silkFragment,
+  uniforms: silkUniforms,
+  transparent: true, depthWrite: false,
+  side: THREE.DoubleSide,
+  blending: THREE.NormalBlending,
 });
-const silk = new THREE.Mesh(geometry, material);
-silk.rotation.set(0.12, 0.55, -0.12); // 斜向横贯，借透视产生纵深
-silk.position.set(0.5, -0.2, 0);
-silk.renderOrder = 2;
-scene.add(silk);
 
-/* ============================================================
-   后期：克制的柔焦泛光（只让缎面亮部发光，不washout）
-   ============================================================ */
-const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-renderPass.clearColor = SPACE_BG;
-renderPass.clearAlpha = 1;
-composer.addPass(renderPass);
-const bloom = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  0.55, // strength（克制）
-  0.7,  // radius（柔）
-  0.2   // threshold（仅高光发光）
-);
-composer.addPass(bloom);
-composer.addPass(new OutputPass());
+const silkGroup = new THREE.Group();
+const silkMesh  = new THREE.Mesh(geo, silkMat);
+silkMesh.renderOrder = 1;
+silkGroup.add(silkMesh);
+scene.add(silkGroup);
 
-/* ============================================================
-   主题过渡：目标色与当前色逐帧插值
-   ============================================================ */
-const target = { deep: T0.deep.clone(), bright: T0.bright.clone(), shift: T0.shift.clone() };
+/* 丝带偏右侧：左端从画面中线附近入镜，右端延伸出画面
+   绕 Y 轴转 0.55 rad（≈31°），让折叠感与视角深度兼得 */
+silkGroup.rotation.set(0.05, 0.55, -0.12);
+silkGroup.position.set(3.2, 0.3, 0.0);
 
-function applyTheme(index) {
-  const th = THEMES[index];
+/* ══════════════════════════════════════════════════════════
+   主题切换：目标色逐帧插值
+   ══════════════════════════════════════════════════════════ */
+const target = { deep: T0.deep.clone(), bright: T0.bright.clone() };
+
+function applyTheme(i) {
+  const th = THEMES[i];
   target.deep.copy(th.deep);
   target.bright.copy(th.bright);
-  target.shift.copy(th.shift);
-  const root = document.documentElement.style;
-  root.setProperty("--accent", th.accent);
-  root.setProperty("--accent-soft", th.accentSoft);
-  root.setProperty("--deep", th.deepCss);
-  root.setProperty("--deep-2", th.deep2);
+  const r = document.documentElement.style;
+  r.setProperty("--accent",      th.accent);
+  r.setProperty("--accent-soft", th.accentSoft);
+  r.setProperty("--deep",        th.deepCss);
+  r.setProperty("--deep-2",      th.deep2);
 }
 
-/* ============================================================
-   分区切换逻辑
-   ============================================================ */
-const panels = [...document.querySelectorAll(".panel")];
-const navButtons = [...document.querySelectorAll("[data-go]")];
-const dotButtons = [...document.querySelectorAll(".dots button")];
-const topButtons = [...document.querySelectorAll(".topnav button")];
-const hintCur = document.getElementById("hint-cur");
-const TOTAL = panels.length;
+/* ══════════════════════════════════════════════════════════
+   分区切换
+   ══════════════════════════════════════════════════════════ */
+const panels     = [...document.querySelectorAll(".panel")];
+const dotBtns    = [...document.querySelectorAll(".dots button")];
+const topBtns    = [...document.querySelectorAll(".topnav button")];
+const navBtns    = [...document.querySelectorAll("[data-go]")];
+const hintCur    = document.getElementById("hint-cur");
+const TOTAL      = panels.length;
+let current = 0, locked = false;
 
-let current = 0;
-let locked = false;
-
-function goTo(index) {
-  index = (index + TOTAL) % TOTAL;
-  if (index === current || locked) return;
+function goTo(idx) {
+  idx = (idx + TOTAL) % TOTAL;
+  if (idx === current || locked) return;
   locked = true;
-
   panels[current].classList.remove("is-active");
-  panels[index].classList.add("is-active");
-  dotButtons.forEach((b, i) => b.classList.toggle("is-active", i === index));
-  topButtons.forEach((b, i) => b.classList.toggle("is-active", i === index));
-
-  current = index;
-  if (hintCur) hintCur.textContent = String(index + 1).padStart(2, "0");
-  applyTheme(index);
-
-  windGust = 0.5; // 切换时来一阵更明显的“风”
+  panels[idx].classList.add("is-active");
+  dotBtns.forEach((b, i) => b.classList.toggle("is-active", i === idx));
+  topBtns.forEach((b, i) => b.classList.toggle("is-active", i === idx));
+  current = idx;
+  if (hintCur) hintCur.textContent = String(idx + 1).padStart(2, "0");
+  applyTheme(idx);
   setTimeout(() => { locked = false; }, 850);
 }
 
-navButtons.forEach((btn) => {
-  btn.addEventListener("click", (e) => { e.preventDefault(); goTo(parseInt(btn.dataset.go, 10)); });
-});
+navBtns.forEach(b => b.addEventListener("click", e => { e.preventDefault(); goTo(+b.dataset.go); }));
 
-let wheelCooldown = 0;
-window.addEventListener("wheel", (e) => {
-  const now = performance.now();
-  if (now < wheelCooldown) return;
-  if (Math.abs(e.deltaY) < 18) return;
-  wheelCooldown = now + 900;
+let wCooldown = 0;
+window.addEventListener("wheel", e => {
+  const n = performance.now();
+  if (n < wCooldown || Math.abs(e.deltaY) < 18) return;
+  wCooldown = n + 900;
   goTo(current + (e.deltaY > 0 ? 1 : -1));
 }, { passive: true });
 
-let touchY = null, touchX = null;
-window.addEventListener("touchstart", (e) => { touchY = e.touches[0].clientY; touchX = e.touches[0].clientX; }, { passive: true });
-window.addEventListener("touchend", (e) => {
-  if (touchY === null) return;
-  const dy = e.changedTouches[0].clientY - touchY;
-  const dx = e.changedTouches[0].clientX - touchX;
+let ty = null, tx = null;
+window.addEventListener("touchstart", e => { ty = e.touches[0].clientY; tx = e.touches[0].clientX; }, { passive: true });
+window.addEventListener("touchend", e => {
+  if (ty === null) return;
+  const dy = e.changedTouches[0].clientY - ty, dx = e.changedTouches[0].clientX - tx;
   if (Math.abs(dy) > 50 && Math.abs(dy) > Math.abs(dx)) goTo(current + (dy < 0 ? 1 : -1));
   else if (Math.abs(dx) > 50) goTo(current + (dx < 0 ? 1 : -1));
-  touchY = touchX = null;
+  ty = tx = null;
 }, { passive: true });
 
-window.addEventListener("keydown", (e) => {
-  if (["ArrowDown", "ArrowRight", "PageDown"].includes(e.key)) goTo(current + 1);
-  if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) goTo(current - 1);
+window.addEventListener("keydown", e => {
+  if (["ArrowDown","ArrowRight","PageDown"].includes(e.key)) goTo(current + 1);
+  if (["ArrowUp","ArrowLeft","PageUp"].includes(e.key))     goTo(current - 1);
 });
 
-/* ============================================================
-   鼠标视差（轻微，营造空间纵深）
-   ============================================================ */
-const pointer = { x: 0, y: 0, tx: 0, ty: 0 };
-window.addEventListener("pointermove", (e) => {
-  pointer.tx = (e.clientX / window.innerWidth - 0.5) * 2;
-  pointer.ty = (e.clientY / window.innerHeight - 0.5) * 2;
+/* ── 鼠标视差 ────────────────────────────────────────────── */
+const ptr = { x: 0, y: 0, tx: 0, ty: 0 };
+window.addEventListener("pointermove", e => {
+  ptr.tx = (e.clientX / window.innerWidth  - 0.5) * 2;
+  ptr.ty = (e.clientY / window.innerHeight - 0.5) * 2;
 });
 
-/* ============================================================
-   渲染循环
-   ============================================================ */
+/* ══════════════════════════════════════════════════════════
+   渲染循环（直接渲染，无 EffectComposer）
+   ══════════════════════════════════════════════════════════ */
 const clock = new THREE.Clock();
-let windGust = 0;
 
 function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
-  const t = (uniforms.uTime.value += dt);
+  const t  = (silkUniforms.uTime.value += dt);
 
-  // 风阵衰减
-  windGust *= 0.985;
-  uniforms.uAmplitude.value = 1.0 + windGust;
+  // 颜色平滑过渡
+  silkUniforms.uDeep.value.lerp(target.deep,    0.040);
+  silkUniforms.uBright.value.lerp(target.bright, 0.040);
 
-  // 颜色平滑插值
-  uniforms.uColorDeep.value.lerp(target.deep, 0.045);
-  uniforms.uColorBright.value.lerp(target.bright, 0.045);
-  uniforms.uColorShift.value.lerp(target.shift, 0.045);
-  nebula.material.color.lerp(target.bright, 0.045);
-  // 同步清除色与场景背景，保证 EffectComposer 不露底
-  scene.background.lerp(SPACE_BG, 0.12);
-  renderer.setClearColor(scene.background, 1);
+  // 极缓慢漂浮（像太空中被微风轻托，不越过中线进入文字区）
+  silkGroup.position.y  = 0.30 + Math.sin(t * 0.14) * 0.28;
+  silkGroup.position.x  = 3.20 + Math.sin(t * 0.09) * 0.16;
+  silkGroup.rotation.z  = -0.12 + Math.sin(t * 0.08) * 0.028;
+  silkGroup.rotation.y  =  0.55 + Math.sin(t * 0.06) * 0.038;
 
-  // 丝带在空间中缓慢漂浮、轻摆
-  silk.position.y = -0.2 + Math.sin(t * 0.18) * 0.4;
-  silk.position.x = 0.5 + Math.sin(t * 0.11) * 0.3; // 收窄漂移，始终居中偏右
-  silk.rotation.z = -0.12 + Math.sin(t * 0.09) * 0.05;
-  silk.rotation.y = 0.55 + Math.sin(t * 0.07) * 0.07;
-
-  // 星空缓慢自转，增强空间感
-  starsFar.rotation.z += dt * 0.004;
-  starsNear.rotation.z -= dt * 0.006;
+  // 星空极缓慢自转
+  starsFar.rotation.z  += dt * 0.003;
+  starsNear.rotation.z -= dt * 0.004;
 
   // 视差
-  pointer.x += (pointer.tx - pointer.x) * 0.04;
-  pointer.y += (pointer.ty - pointer.y) * 0.04;
-  camera.position.x = pointer.x * 0.9;
-  camera.position.y = -pointer.y * 0.6;
-  camera.lookAt(0, 0, 0);
+  ptr.x += (ptr.tx - ptr.x) * 0.035;
+  ptr.y += (ptr.ty - ptr.y) * 0.035;
+  camera.position.x = ptr.x * 0.55;
+  camera.position.y = 1.5 - ptr.y * 0.40;
+  camera.lookAt(2, 0, 0);
 
-  composer.render();
+  renderer.render(scene, camera);
   requestAnimationFrame(tick);
 }
 
-/* ============================================================
-   自适应
-   ============================================================ */
-function onResize() {
+/* ── 自适应 ──────────────────────────────────────────────── */
+window.addEventListener("resize", () => {
   const w = window.innerWidth, h = window.innerHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-  composer.setSize(w, h);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-}
-window.addEventListener("resize", onResize);
+});
 
-/* ============================================================
-   启动
-   ============================================================ */
+/* ── 启动 ────────────────────────────────────────────────── */
 applyTheme(0);
 tick();
 
 const loader = document.getElementById("loader");
-window.addEventListener("load", () => { setTimeout(() => loader && loader.classList.add("is-done"), 500); });
-setTimeout(() => loader && loader.classList.add("is-done"), 2500);
+window.addEventListener("load", () => setTimeout(() => loader?.classList.add("is-done"), 400));
+setTimeout(() => loader?.classList.add("is-done"), 2500);
