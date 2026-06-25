@@ -289,10 +289,9 @@ function applyTheme(i) {
    分区切换
    ══════════════════════════════════════════════════════════ */
 const panels     = [...document.querySelectorAll(".panel")];
-const dotBtns    = [...document.querySelectorAll(".dots button")];
-const topBtns    = [...document.querySelectorAll(".topnav button")];
 const navBtns    = [...document.querySelectorAll("[data-go]")];
-const hintCur    = document.getElementById("hint-cur");
+const navItems   = [...document.querySelectorAll(".nav__item")];
+const pgCur      = document.getElementById("pg-cur");
 const TOTAL      = panels.length;
 let current = 0, locked = false;
 
@@ -302,10 +301,9 @@ function goTo(idx) {
   locked = true;
   panels[current].classList.remove("is-active");
   panels[idx].classList.add("is-active");
-  dotBtns.forEach((b, i) => b.classList.toggle("is-active", i === idx));
-  topBtns.forEach((b, i) => b.classList.toggle("is-active", i === idx));
+  navItems.forEach((b, i) => b.classList.toggle("is-active", i === idx));
   current = idx;
-  if (hintCur) hintCur.textContent = String(idx + 1).padStart(2, "0");
+  if (pgCur) pgCur.textContent = String(idx + 1).padStart(2, "0");
   applyTheme(idx);
   setTimeout(() => { locked = false; }, 850);
 }

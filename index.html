@@ -3,125 +3,210 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="黛云丝绸 · 高级真丝织造与定制 — 流动的丝光，沉静的紫。" />
+  <meta name="description" content="黛云丝绸 · 高级真丝织造与定制 — 自缫丝到成衣的一体化工坊" />
   <title>黛云丝绸 · DAIYUN SILK</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231a0930'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%23b06bff'/%3E%3C/svg%3E" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23040208'/%3E%3Ccircle cx='16' cy='16' r='8' fill='%23b06bff'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Serif+SC:wght@300;400;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@300;400;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./styles.css" />
-
-  <!-- three.js 通过 ESM importmap 从 CDN 加载 -->
   <script type="importmap">
-  {
-    "imports": {
+  { "imports": {
       "three": "https://unpkg.com/three@0.161.0/build/three.module.js",
       "three/addons/": "https://unpkg.com/three@0.161.0/examples/jsm/"
-    }
-  }
+  } }
   </script>
 </head>
 <body>
-  <!-- 3D 丝绸波浪背景 -->
-  <canvas id="silk-canvas" aria-hidden="true"></canvas>
-  <div class="bg-vignette" aria-hidden="true"></div>
-  <div class="grain" aria-hidden="true"></div>
 
-  <!-- 加载层 -->
+  <!-- 3D Canvas -->
+  <canvas id="silk-canvas" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <!-- Loader -->
   <div class="loader" id="loader">
-    <div class="loader__mark">黛云</div>
+    <span class="loader__mark">黛云</span>
     <div class="loader__bar"><span></span></div>
   </div>
 
-  <!-- 顶部导航 -->
-  <header class="topbar">
-    <a class="brand" href="#section-0" data-go="0">
-      <span class="brand__cn">黛云</span>
-      <span class="brand__en">DAIYUN&nbsp;SILK</span>
-    </a>
-    <nav class="topnav" aria-label="主导航">
-      <button data-go="0" class="is-active">序章</button>
-      <button data-go="1">织品</button>
-      <button data-go="2">匠艺</button>
-      <button data-go="3">洽谈</button>
-    </nav>
+  <!-- ── Navigation (Steelcase style) ────────────────────── -->
+  <header class="nav" id="nav">
+    <div class="nav__inner">
+      <button class="nav__logo" data-go="0" aria-label="回到首页">
+        <span class="nav__logo-cn">黛云</span>
+        <span class="nav__sep" aria-hidden="true"></span>
+        <span class="nav__logo-en">DAIYUN SILK</span>
+      </button>
+
+      <nav class="nav__menu" aria-label="主导航">
+        <button class="nav__item is-active" data-go="0">序章</button>
+        <button class="nav__item" data-go="1">织品</button>
+        <button class="nav__item" data-go="2">匠艺</button>
+        <button class="nav__item" data-go="3">洽谈</button>
+      </nav>
+
+      <div class="nav__util">
+        <button class="nav__cta" data-go="3">咨询定制</button>
+      </div>
+    </div>
   </header>
 
-  <!-- 右侧分区指示点 -->
-  <nav class="dots" aria-label="分区导航">
-    <button data-go="0" class="is-active" aria-label="序章"></button>
-    <button data-go="1" aria-label="织品"></button>
-    <button data-go="2" aria-label="匠艺"></button>
-    <button data-go="3" aria-label="洽谈"></button>
-  </nav>
-
-  <!-- 内容分区（滑动切换） -->
+  <!-- ── Panels ────────────────────────────────────────────── -->
   <main class="stage" id="stage">
 
-    <section class="panel is-active" id="section-0" data-index="0">
-      <p class="eyebrow">一寸光阴一寸丝</p>
-      <h1 class="display">流动的<em>丝光</em><br />沉静的紫</h1>
-      <p class="lead">黛云丝绸 — 自缫丝到成衣的一体化高级真丝织造与定制。我们以光为线，将每一缕色泽织进时间。</p>
-      <div class="actions">
-        <button class="btn btn--solid" data-go="1">探索系列</button>
-        <button class="btn btn--ghost" data-go="2">了解匠艺</button>
+    <!-- 00 · 序章 / Hero -->
+    <section class="panel is-active" id="p0" data-index="0" aria-label="序章">
+      <div class="hero">
+        <p class="eyebrow">DAIYUN SILK · 黛云丝绸</p>
+        <h1 class="hero__headline">
+          流动的丝光<br>沉静的紫
+        </h1>
+        <p class="hero__desc">
+          自缫丝到成衣的一体化高级真丝织造与定制<br>
+          我们以光为线，将每一缕色泽织进时间
+        </p>
+        <div class="btn-group">
+          <button class="btn" data-go="1">探索系列</button>
+          <button class="btn btn--outline" data-go="2">了解匠艺</button>
+        </div>
+      </div>
+      <div class="scroll-cue" aria-hidden="true">
+        <span>SCROLL</span>
+        <div class="scroll-cue__line"></div>
       </div>
     </section>
 
-    <section class="panel" id="section-1" data-index="1">
-      <p class="eyebrow">织品 · COLLECTION</p>
-      <h2 class="display display--sm">三种经纬，<em>三种性情</em></h2>
-      <div class="cards">
-        <article class="card">
-          <span class="card__no">01</span>
-          <h3>真丝重缎</h3>
-          <p>19 姆米桑蚕真丝，缎面如水银流光，垂坠而温润，适合礼服与高定。</p>
-        </article>
-        <article class="card">
-          <span class="card__no">02</span>
-          <h3>香云纱</h3>
-          <p>薯莨草木染、河泥固色的非遗工艺，一面乌亮一面赭红，越穿越柔。</p>
-        </article>
-        <article class="card">
-          <span class="card__no">03</span>
-          <h3>提花织锦</h3>
-          <p>大花楼木机织造，纹样浮于经纬之间，光影流转间自成山水。</p>
-        </article>
+    <!-- 01 · 织品 / Collection -->
+    <section class="panel" id="p1" data-index="1" aria-label="织品">
+      <div class="section-wrap">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">COLLECTION / 织品</p>
+            <h2 class="section-title">三种经纬，三种性情</h2>
+          </div>
+          <span class="section-count">03 系列</span>
+        </div>
+
+        <div class="product-grid">
+
+          <article class="pcard">
+            <div class="pcard__media pcard__media--satin" aria-hidden="true">
+              <span class="pcard__index">01</span>
+            </div>
+            <div class="pcard__body">
+              <p class="pcard__tag">19 姆米 · 桑蚕真丝</p>
+              <h3 class="pcard__name">真丝重缎</h3>
+              <p class="pcard__desc">缎面如水银流光，垂坠而温润，适合礼服与高级定制服装。</p>
+            </div>
+          </article>
+
+          <article class="pcard">
+            <div class="pcard__media pcard__media--gambiered" aria-hidden="true">
+              <span class="pcard__index">02</span>
+            </div>
+            <div class="pcard__body">
+              <p class="pcard__tag">薯莨草木染 · 非遗工艺</p>
+              <h3 class="pcard__name">香云纱</h3>
+              <p class="pcard__desc">一面乌亮一面赭红，越穿越柔，岁月为其包浆。</p>
+            </div>
+          </article>
+
+          <article class="pcard">
+            <div class="pcard__media pcard__media--jacquard" aria-hidden="true">
+              <span class="pcard__index">03</span>
+            </div>
+            <div class="pcard__body">
+              <p class="pcard__tag">大花楼木机 · 手工织造</p>
+              <h3 class="pcard__name">提花织锦</h3>
+              <p class="pcard__desc">纹样浮于经纬之间，光影流转间自成山水。</p>
+            </div>
+          </article>
+
+        </div>
       </div>
     </section>
 
-    <section class="panel" id="section-2" data-index="2">
-      <p class="eyebrow">匠艺 · CRAFT</p>
-      <h2 class="display display--sm">四道工序，<em>一寸丝心</em></h2>
-      <ol class="steps">
-        <li><span>缫丝</span><i>取茧抽丝，八根并一，定丝之筋骨。</i></li>
-        <li><span>织造</span><i>经纬交错，机杼有声，定丝之肌理。</i></li>
-        <li><span>印染</span><i>植物为色，反复浸染，定丝之性情。</i></li>
-        <li><span>整理</span><i>蒸、洗、定、烫，归于温润如初。</i></li>
-      </ol>
+    <!-- 02 · 匠艺 / Craft -->
+    <section class="panel" id="p2" data-index="2" aria-label="匠艺">
+      <div class="section-wrap">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">CRAFT / 匠艺</p>
+            <h2 class="section-title">四道工序，一寸丝心</h2>
+          </div>
+          <p class="section-sub">每一匹出自黛云的布料，皆经历完整的手工工艺链条。</p>
+        </div>
+
+        <div class="craft-grid">
+          <div class="craft-item">
+            <p class="craft-item__num">01</p>
+            <h3 class="craft-item__name">缫丝</h3>
+            <p class="craft-item__desc">取茧抽丝，八根并一，定丝之筋骨与光泽。</p>
+          </div>
+          <div class="craft-item">
+            <p class="craft-item__num">02</p>
+            <h3 class="craft-item__name">织造</h3>
+            <p class="craft-item__desc">经纬交错，机杼有声，定丝之肌理与密度。</p>
+          </div>
+          <div class="craft-item">
+            <p class="craft-item__num">03</p>
+            <h3 class="craft-item__name">印染</h3>
+            <p class="craft-item__desc">植物为色，反复浸染，定丝之性情与深度。</p>
+          </div>
+          <div class="craft-item">
+            <p class="craft-item__num">04</p>
+            <h3 class="craft-item__name">整理</h3>
+            <p class="craft-item__desc">蒸、洗、定、烫，归于温润如初，历久弥新。</p>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section class="panel" id="section-3" data-index="3">
-      <p class="eyebrow">洽谈 · CONTACT</p>
-      <h2 class="display display--sm">让我们一起，<em>织一段光</em></h2>
-      <p class="lead">承接面料批量供应、品牌联名与高级定制。无论是一匹布还是一整季，皆可对话。</p>
-      <div class="contact">
-        <a class="contact__line" href="mailto:atelier@daiyun-silk.com">atelier@daiyun-silk.com</a>
-        <a class="contact__line" href="tel:+8657188888888">+86 0571 8888 8888</a>
-        <span class="contact__line">浙江 · 杭州 · 丝绸小镇</span>
-      </div>
-      <div class="actions">
-        <button class="btn btn--solid" data-go="0">回到序章</button>
+    <!-- 03 · 洽谈 / Contact -->
+    <section class="panel" id="p3" data-index="3" aria-label="洽谈">
+      <div class="section-wrap section-wrap--contact">
+        <div class="contact-grid">
+
+          <div class="contact-main">
+            <p class="eyebrow">CONTACT / 洽谈</p>
+            <h2 class="contact-headline">让我们一起，<br>织一段光</h2>
+            <p class="contact-desc">承接面料批量供应、品牌联名与高级定制。<br>无论是一匹布还是一整季，皆可对话。</p>
+            <button class="btn btn--outline" data-go="0">回到序章</button>
+          </div>
+
+          <div class="contact-info">
+            <dl>
+              <div class="contact-row">
+                <dt>EMAIL</dt>
+                <dd><a href="mailto:atelier@daiyun-silk.com">atelier@daiyun-silk.com</a></dd>
+              </div>
+              <div class="contact-row">
+                <dt>PHONE</dt>
+                <dd><a href="tel:+8657188888888">+86 0571 8888 8888</a></dd>
+              </div>
+              <div class="contact-row">
+                <dt>ADDRESS</dt>
+                <dd>浙江 · 杭州 · 丝绸小镇</dd>
+              </div>
+              <div class="contact-row">
+                <dt>HOURS</dt>
+                <dd>周一至周五 &nbsp;09:00 — 18:00</dd>
+              </div>
+            </dl>
+          </div>
+
+        </div>
       </div>
     </section>
 
   </main>
 
-  <!-- 底部提示 -->
-  <footer class="hint">
-    <span class="hint__scroll">滑动 / 滚轮 / 方向键 切换</span>
-    <span class="hint__count"><b id="hint-cur">01</b> — 04</span>
-  </footer>
+  <!-- Page indicator -->
+  <div class="pg-indicator" aria-live="polite" aria-label="当前页码">
+    <b id="pg-cur">01</b>
+    <span>/</span>
+    <span>04</span>
+  </div>
 
   <script type="module" src="./main.js"></script>
 </body>
