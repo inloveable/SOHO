@@ -188,9 +188,10 @@ const fragmentShader = /* glsl */ `
    渲染器 / 场景 / 相机
    ============================================================ */
 const canvas = document.getElementById("silk-canvas");
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance" });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(SPACE_BG, 1); // 固定清除色，避免 EffectComposer 内部帧缓冲产生透明黑闪
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 
@@ -292,7 +293,10 @@ scene.add(silk);
    后期：克制的柔焦泛光（只让缎面亮部发光，不washout）
    ============================================================ */
 const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
+const renderPass = new RenderPass(scene, camera);
+renderPass.clearColor = SPACE_BG;
+renderPass.clearAlpha = 1;
+composer.addPass(renderPass);
 const bloom = new UnrealBloomPass(
   new THREE.Vector2(window.innerWidth, window.innerHeight),
   0.55, // strength（克制）
@@ -407,12 +411,15 @@ function tick() {
   uniforms.uColorBright.value.lerp(target.bright, 0.045);
   uniforms.uColorShift.value.lerp(target.shift, 0.045);
   nebula.material.color.lerp(target.bright, 0.045);
+  // 同步清除色与场景背景，保证 EffectComposer 不露底
+  scene.background.lerp(SPACE_BG, 0.12);
+  renderer.setClearColor(scene.background, 1);
 
   // 丝带在空间中缓慢漂浮、轻摆
-  silk.position.y = -0.2 + Math.sin(t * 0.18) * 0.5;
-  silk.position.x = 0.5 + Math.sin(t * 0.11) * 0.6;
-  silk.rotation.z = -0.12 + Math.sin(t * 0.09) * 0.06;
-  silk.rotation.y = 0.55 + Math.sin(t * 0.07) * 0.08;
+  silk.position.y = -0.2 + Math.sin(t * 0.18) * 0.4;
+  silk.position.x = 0.5 + Math.sin(t * 0.11) * 0.3; // 收窄漂移，始终居中偏右
+  silk.rotation.z = -0.12 + Math.sin(t * 0.09) * 0.05;
+  silk.rotation.y = 0.55 + Math.sin(t * 0.07) * 0.07;
 
   // 星空缓慢自转，增强空间感
   starsFar.rotation.z += dt * 0.004;
