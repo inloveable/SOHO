@@ -55,8 +55,28 @@ const server = http.createServer((req, res) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`\n  黛云丝绸预览已启动`);
-  console.log(`  ➜  本地:   http://localhost:${PORT}`);
-  console.log(`  ➜  网络:   http://${HOST}:${PORT}\n`);
+server.on("error", (err) => {
+  if (err.code === "EADDRINUSE") {
+    const next = Number(server.__port || PORT) + 1;
+    console.warn(`  端口 ${server.__port || PORT} 已被占用，尝试 ${next} …`);
+    if (next - Number(PORT) > 10) {
+      console.error("  连续多个端口均被占用，请用 PORT=端口 npm start 手动指定。");
+      process.exit(1);
+    }
+    server.__port = next;
+    setTimeout(() => server.listen(next, HOST), 150);
+  } else {
+    throw err;
+  }
 });
+
+server.on("listening", () => {
+  const a = server.address();
+  const port = typeof a === "object" && a ? a.port : PORT;
+  console.log(`\n  黛云丝绸预览已启动`);
+  console.log(`  ➜  本地:   http://localhost:${port}`);
+  console.log(`  ➜  网络:   http://${HOST}:${port}\n`);
+});
+
+server.__port = PORT;
+server.listen(PORT, HOST);
