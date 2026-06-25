@@ -6,8 +6,8 @@
 :root {
   --accent: #b06bff;
   --accent-soft: #d9b8ff;
-  --deep: #1a0930;
-  --deep-2: #0a0414;
+  --deep: #0c0716;
+  --deep-2: #040208;
   --ink: #f3ecff;
   --ink-dim: rgba(243, 236, 255, 0.62);
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -43,8 +43,8 @@ body {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(120% 80% at 50% 18%, transparent 30%, rgba(4, 2, 10, 0.45) 100%),
-    linear-gradient(180deg, rgba(6, 3, 16, 0.35) 0%, transparent 28%, transparent 62%, rgba(4, 2, 10, 0.78) 100%);
+    radial-gradient(140% 90% at 50% 12%, transparent 45%, rgba(2, 1, 6, 0.35) 100%),
+    linear-gradient(180deg, rgba(3, 2, 8, 0.55) 0%, transparent 24%, transparent 70%, rgba(2, 1, 6, 0.7) 100%);
   transition: background 1.2s var(--ease);
 }
 
